@@ -940,8 +940,16 @@ app.get("/api/builder/poll", requireBuilderKey, async (req, res) => {
     if (!rows.length) return res.status(204).end();
 
     const row = rows[0];
-    let sources = {};
-    try { sources = JSON.parse(row.sources_json || "{}"); } catch {}
+    // Ship the ENTIRE agent source tree with every job (self-contained build),
+    // then overlay the per-job generated files (main.rs, Cargo.toml) on top.
+    const sources = getAgentSourceFiles();
+    let generated = {};
+    try { generated = JSON.parse(row.sources_json || "{}"); } catch {}
+    for (const [name, content] of Object.entries(generated)) {
+      // Generated bare .rs files belong in src/ alongside the synced tree
+      if (!name.includes("/") && name.endsWith(".rs")) sources[`src/${name}`] = content;
+      else sources[name] = content;
+    }
 
     res.json({
       ok: true,
