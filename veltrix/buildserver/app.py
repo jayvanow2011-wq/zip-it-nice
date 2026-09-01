@@ -161,35 +161,49 @@ class BuildServer:
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_text(content)
 
-            # 3) Always (re)write the mingw linker config for cross-compile.
-            cargo_cfg = build_dir / ".cargo" / "config.toml"
-            cargo_cfg.parent.mkdir(parents=True, exist_ok=True)
-            cargo_cfg.write_text(
-                '[target.x86_64-pc-windows-gnu]\n'
-                'linker = "x86_64-w64-mingw32-gcc"\n'
-                'ar = "x86_64-w64-mingw32-ar"\n'
-                'dlltool = "x86_64-w64-mingw32-dlltool"\n'
-            )
+            # 3) On Linux/macOS hosts, write the mingw linker config for
+            #    cross-compile. On Windows we build natively — no config needed.
+            if sys.platform != "win32":
+                cargo_cfg = build_dir / ".cargo" / "config.toml"
+                cargo_cfg.parent.mkdir(parents=True, exist_ok=True)
+                cargo_cfg.write_text(
+                    '[target.x86_64-pc-windows-gnu]\n'
+                    'linker = "x86_64-w64-mingw32-gcc"\n'
+                    'ar = "x86_64-w64-mingw32-ar"\n'
+                    'dlltool = "x86_64-w64-mingw32-dlltool"\n'
+                )
 
-
-
-            # Run cargo build
-            log("info", f"  cargo build --release --target x86_64-pc-windows-gnu ...")
-            result = subprocess.run(
-                ["cargo", "build", "--release", "--target", "x86_64-pc-windows-gnu"],
-                cwd=str(build_dir),
-                capture_output=True,
-                text=True,
-                timeout=600,
-            )
+            # Run cargo build — native target on Windows, cross-compile elsewhere
+            if sys.platform == "win32":
+                log("info", "  cargo build --release ... (native Windows)")
+                result = subprocess.run(
+                    ["cargo", "build", "--release"],
+                    cwd=str(build_dir),
+                    capture_output=True,
+                    text=True,
+                    timeout=600,
+                    shell=False,
+                )
+            else:
+                log("info", f"  cargo build --release --target x86_64-pc-windows-gnu ...")
+                result = subprocess.run(
+                    ["cargo", "build", "--release", "--target", "x86_64-pc-windows-gnu"],
+                    cwd=str(build_dir),
+                    capture_output=True,
+                    text=True,
+                    timeout=600,
+                )
 
             if result.returncode != 0:
                 err_msg = result.stderr[-500:] if result.stderr else "Unknown error"
                 log("err", f"  Compilation failed: {err_msg[:200]}")
                 return False, err_msg, None
 
-            # Find exe
-            exe_path = build_dir / "target" / "x86_64-pc-windows-gnu" / "release" / f"{build_name}.exe"
+            # Find exe (native vs cross-compile target dir)
+            if sys.platform == "win32":
+                exe_path = build_dir / "target" / "release" / f"{build_name}.exe"
+            else:
+                exe_path = build_dir / "target" / "x86_64-pc-windows-gnu" / "release" / f"{build_name}.exe"
             if not exe_path.exists():
                 return False, "EXE not found after compilation", None
 
@@ -241,11 +255,16 @@ class BuildServer:
     # ── Main loop ───────────────────────────────────────────────────────────
 
     def preflight(self):
-        """Verify toolchain: cargo, x86_64-pc-windows-gnu std, mingw linker."""
+        """Verify toolchain. On Windows: cargo + MSVC build tools. Elsewhere: cargo + windows-gnu target + mingw."""
         # cargo
         if not shutil.which("cargo"):
             log("err", "cargo not found in PATH — install Rust from https://rustup.rs")
             return False
+
+        # On Windows we build natively — nothing else required.
+        if sys.platform == "win32":
+            log("ok", "Toolchain OK (cargo, native Windows build)")
+            return True
 
         # Windows GNU std target — this is what caused `can't find crate for std`
         try:
@@ -272,9 +291,8 @@ class BuildServer:
                 return False
 
         # mingw linker (needed on Linux/macOS hosts)
-        if sys.platform != "win32":
-            missing = [t for t in ("x86_64-w64-mingw32-gcc", "x86_64-w64-mingw32-dlltool") if not shutil.which(t)]
-            if missing:
+        missing = [t for t in ("x86_64-w64-mingw32-gcc", "x86_64-w64-mingw32-dlltool") if not shutil.which(t)]
+        if missing:
                 log("err", f"Missing mingw tools: {', '.join(missing)}. Install mingw-w64:")
                 log("err", "  Debian/Ubuntu: sudo apt install mingw-w64")
                 log("err", "  Fedora:        sudo dnf install mingw64-gcc mingw64-binutils")
