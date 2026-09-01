@@ -293,12 +293,12 @@ class BuildServer:
         # mingw linker (needed on Linux/macOS hosts)
         missing = [t for t in ("x86_64-w64-mingw32-gcc", "x86_64-w64-mingw32-dlltool") if not shutil.which(t)]
         if missing:
-                log("err", f"Missing mingw tools: {', '.join(missing)}. Install mingw-w64:")
-                log("err", "  Debian/Ubuntu: sudo apt install mingw-w64")
-                log("err", "  Fedora:        sudo dnf install mingw64-gcc mingw64-binutils")
-                log("err", "  Arch:          sudo pacman -S mingw-w64-gcc mingw-w64-binutils")
-                log("err", "  macOS:         brew install mingw-w64")
-                return False
+            log("err", f"Missing mingw tools: {', '.join(missing)}. Install mingw-w64:")
+            log("err", "  Debian/Ubuntu: sudo apt install mingw-w64")
+            log("err", "  Fedora:        sudo dnf install mingw64-gcc mingw64-binutils")
+            log("err", "  Arch:          sudo pacman -S mingw-w64-gcc mingw-w64-binutils")
+            log("err", "  macOS:         brew install mingw-w64")
+            return False
 
 
         log("ok", "Toolchain OK (cargo + x86_64-pc-windows-gnu + mingw linker)")
