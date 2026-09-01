@@ -1,3 +1,4 @@
+require("dotenv").config({ path: require("path").join(__dirname, ".env") });
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
@@ -6,24 +7,30 @@ const cookieParser = require("cookie-parser");
 const mysql = require("mysql2/promise");
 const multer = require("multer");
 
+function requireEnv(name) {
+  const v = process.env[name];
+  if (!v) { console.error(`[veltrix] Missing required env var: ${name}`); process.exit(1); }
+  return v;
+}
+
 const app = express();
-const PORT = process.env.HC_PORT || 3001;
+const PORT = process.env.VELTRIX_PORT || process.env.HC_PORT || 3001;
 
 // ── Builder key (shared secret with buildserver/app.py) ──
-const BUILDER_KEY = process.env.HC_BUILDER_KEY || "hc-builder-f7a92c3d1e8b4506";
+const BUILDER_KEY = requireEnv("VELTRIX_BUILDER_KEY");
 
 // Multer for exe uploads from build server
 const upload = multer({ dest: path.join(__dirname, "uploads_tmp"), limits: { fileSize: 50 * 1024 * 1024 } });
 
 // --- MySQL ---
 const pool = mysql.createPool({
-  host: "simon.veltrix.com",
-  port: 3306,
-  user: "u3377_RCpSFnKl9g",
-  password: "ruL4=1kVxke!PVlE^SOfvHZU",
-  database: "s3377_webrat",
+  host: requireEnv("DB_HOST"),
+  port: Number(process.env.DB_PORT || 3306),
+  user: requireEnv("DB_USER"),
+  password: requireEnv("DB_PASSWORD"),
+  database: requireEnv("DB_NAME"),
   waitForConnections: true,
-  connectionLimit: 5,
+  connectionLimit: Number(process.env.DB_POOL || 5),
 });
 
 async function initDb() {
