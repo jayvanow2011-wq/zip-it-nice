@@ -134,15 +134,42 @@ class BuildServer:
         log("info", f"Building #{build_id} '{build_name}' for {username}...")
 
         try:
-            # Write generated main.rs + Cargo.toml
-            for name, content in sources.items():
-                (build_dir / name if name == "Cargo.toml" else src_dir / name).write_text(content)
+            # 1) Seed build dir with the entire synced source tree (main.rs,
+            #    Cargo.toml, all modules, .cargo/config.toml, everything).
+            if SOURCES_DIR.exists():
+                for root, dirs, filenames in os.walk(SOURCES_DIR):
+                    # skip anything cargo-generated
+                    dirs[:] = [d for d in dirs if d != "target"]
+                    for fname in filenames:
+                        src_abs = Path(root) / fname
+                        rel = src_abs.relative_to(SOURCES_DIR)
+                        dst_abs = build_dir / rel
+                        dst_abs.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(src_abs, dst_abs)
 
-            # Copy base module files from synced sources
-            for mod_file in ["screen.rs", "camera.rs", "filemanager.rs", "persistence.rs"]:
-                src_path = SOURCES_DIR / mod_file
-                if src_path.exists():
-                    shutil.copy2(src_path, src_dir / mod_file)
+            # 2) Overlay per-job generated files (main.rs, Cargo.toml, etc.).
+            #    Bare filenames land in src/ unless they're project-root files.
+            ROOT_FILES = {"Cargo.toml", "Cargo.lock", "build.rs", "rust-toolchain", "rust-toolchain.toml"}
+            for name, content in sources.items():
+                safe = name.replace("\\", "/").lstrip("/")
+                if "/" in safe:
+                    dest = build_dir / safe
+                elif safe in ROOT_FILES or safe.startswith("."):
+                    dest = build_dir / safe
+                else:
+                    dest = src_dir / safe
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(content)
+
+            # 3) Guarantee a mingw linker config exists for cross-compile.
+            cargo_cfg = build_dir / ".cargo" / "config.toml"
+            if not cargo_cfg.exists():
+                cargo_cfg.parent.mkdir(parents=True, exist_ok=True)
+                cargo_cfg.write_text(
+                    '[target.x86_64-pc-windows-gnu]\n'
+                    'linker = "x86_64-w64-mingw32-gcc"\n'
+                    'ar = "x86_64-w64-mingw32-ar"\n'
+                )
 
             # Run cargo build
             log("info", f"  cargo build --release --target x86_64-pc-windows-gnu ...")
