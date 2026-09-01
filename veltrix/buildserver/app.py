@@ -30,8 +30,8 @@ except ImportError:
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
-DEFAULT_URL = "http://localhost:3001"
-DEFAULT_KEY = "hc-builder-f7a92c3d1e8b4506"   # must match BUILDER_KEY in server.js
+DEFAULT_URL = os.environ.get("VELTRIX_PANEL_URL", "http://localhost:3001")
+DEFAULT_KEY = os.environ.get("VELTRIX_BUILDER_KEY", "")   # must match VELTRIX_BUILDER_KEY in server.js .env
 POLL_INTERVAL = 5        # seconds between polls
 SOURCES_DIR = Path(__file__).parent / "rustagent_src"
 BUILDS_DIR = Path(__file__).parent / "builds"
