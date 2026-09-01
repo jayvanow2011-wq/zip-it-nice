@@ -169,7 +169,9 @@ class BuildServer:
                     '[target.x86_64-pc-windows-gnu]\n'
                     'linker = "x86_64-w64-mingw32-gcc"\n'
                     'ar = "x86_64-w64-mingw32-ar"\n'
+                    'dlltool = "x86_64-w64-mingw32-dlltool"\n'
                 )
+
 
             # Run cargo build
             log("info", f"  cargo build --release --target x86_64-pc-windows-gnu ...")
