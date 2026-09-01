@@ -1,0 +1,34 @@
+# Secrets
+.env
+.env.local
+*.env
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build output
+dist/
+build/
+uploads_tmp/
+buildserver/builds/
+buildserver/rustagent_src/
+
+# Rust
+rustagent/target/
+**/*.rs.bk
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
