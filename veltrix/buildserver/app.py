@@ -81,13 +81,15 @@ class BuildServer:
             files = data.get("files", {})
             changed = 0
             for name, content in files.items():
-                dest = SOURCES_DIR / name
-                # Only write if content changed
+                # Support nested paths like "src/main.rs" or ".cargo/config.toml"
+                safe = name.replace("\\", "/").lstrip("/")
+                dest = SOURCES_DIR / safe
+                dest.parent.mkdir(parents=True, exist_ok=True)
                 existing = dest.read_text() if dest.exists() else ""
                 if existing != content:
                     dest.write_text(content)
                     changed += 1
-                    log("info", f"  Updated: {name}")
+                    log("info", f"  Updated: {safe}")
             log("ok", f"Source sync complete — {changed} file(s) updated, {len(files)} total")
             return True
         except Exception as e:
