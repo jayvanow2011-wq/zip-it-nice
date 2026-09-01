@@ -891,8 +891,9 @@ app.post("/api/build", requireAuth, requireCsrf, requireActiveSub, async (req, r
 // BUILD SERVER API — authenticated with BUILDER_KEY
 // ══════════════════════════════════════════════════════════════════════════
 
-// GET /api/builder/sources — send ALL rustagent source files to the build server
-app.get("/api/builder/sources", requireBuilderKey, (req, res) => {
+// Collect ALL rustagent source files (main.rs, every module, Cargo.toml,
+// nested files) into a { relativePath: content } map.
+function getAgentSourceFiles() {
   const agentRoot = path.join(__dirname, "rustagent");
   const files = {};
 
@@ -922,8 +923,12 @@ app.get("/api/builder/sources", requireBuilderKey, (req, res) => {
       `linker = "x86_64-w64-mingw32-gcc"\n` +
       `ar = "x86_64-w64-mingw32-ar"\n`;
   }
+  return files;
+}
 
-  res.json({ ok: true, files });
+// GET /api/builder/sources — send ALL rustagent source files to the build server
+app.get("/api/builder/sources", requireBuilderKey, (req, res) => {
+  res.json({ ok: true, files: getAgentSourceFiles() });
 });
 
 // GET /api/builder/poll — build server polls for next queued job
