@@ -238,11 +238,58 @@ class BuildServer:
 
     # ── Main loop ───────────────────────────────────────────────────────────
 
+    def preflight(self):
+        """Verify toolchain: cargo, x86_64-pc-windows-gnu std, mingw linker."""
+        # cargo
+        if not shutil.which("cargo"):
+            log("err", "cargo not found in PATH — install Rust from https://rustup.rs")
+            return False
+
+        # Windows GNU std target — this is what caused `can't find crate for std`
+        try:
+            r = subprocess.run(["rustup", "target", "list", "--installed"],
+                               capture_output=True, text=True, timeout=30)
+            installed = r.stdout.split() if r.returncode == 0 else []
+        except Exception:
+            installed = []
+
+        if "x86_64-pc-windows-gnu" not in installed:
+            log("warn", "Windows GNU target missing — installing x86_64-pc-windows-gnu ...")
+            try:
+                r = subprocess.run(
+                    ["rustup", "target", "add", "x86_64-pc-windows-gnu"],
+                    capture_output=True, text=True, timeout=300,
+                )
+                if r.returncode == 0:
+                    log("ok", "Installed target x86_64-pc-windows-gnu")
+                else:
+                    log("err", f"Failed to add target: {r.stderr[-300:]}")
+                    return False
+            except FileNotFoundError:
+                log("err", "rustup not found — install Rust via rustup so the Windows target can be added")
+                return False
+
+        # mingw linker (needed on Linux/macOS hosts)
+        if sys.platform != "win32" and not shutil.which("x86_64-w64-mingw32-gcc"):
+            log("err", "x86_64-w64-mingw32-gcc not found. Install mingw-w64:")
+            log("err", "  Debian/Ubuntu: sudo apt install mingw-w64")
+            log("err", "  Fedora:        sudo dnf install mingw64-gcc")
+            log("err", "  Arch:          sudo pacman -S mingw-w64-gcc")
+            log("err", "  macOS:         brew install mingw-w64")
+            return False
+
+        log("ok", "Toolchain OK (cargo + x86_64-pc-windows-gnu + mingw linker)")
+        return True
+
     def run(self):
         log("info", f"Veltrix Build Server starting")
         log("info", f"Panel: {self.url}")
         log("info", f"Poll interval: {POLL_INTERVAL}s")
         print()
+
+        if not self.preflight():
+            log("err", "Preflight failed — fix the toolchain above, then re-run.")
+            sys.exit(1)
 
         # Initial source sync
         if not self.sync_sources():
