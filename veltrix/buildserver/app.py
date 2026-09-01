@@ -161,16 +161,16 @@ class BuildServer:
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_text(content)
 
-            # 3) Guarantee a mingw linker config exists for cross-compile.
+            # 3) Always (re)write the mingw linker config for cross-compile.
             cargo_cfg = build_dir / ".cargo" / "config.toml"
-            if not cargo_cfg.exists():
-                cargo_cfg.parent.mkdir(parents=True, exist_ok=True)
-                cargo_cfg.write_text(
-                    '[target.x86_64-pc-windows-gnu]\n'
-                    'linker = "x86_64-w64-mingw32-gcc"\n'
-                    'ar = "x86_64-w64-mingw32-ar"\n'
-                    'dlltool = "x86_64-w64-mingw32-dlltool"\n'
-                )
+            cargo_cfg.parent.mkdir(parents=True, exist_ok=True)
+            cargo_cfg.write_text(
+                '[target.x86_64-pc-windows-gnu]\n'
+                'linker = "x86_64-w64-mingw32-gcc"\n'
+                'ar = "x86_64-w64-mingw32-ar"\n'
+                'dlltool = "x86_64-w64-mingw32-dlltool"\n'
+            )
+
 
 
             # Run cargo build
