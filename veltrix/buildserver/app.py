@@ -250,10 +250,10 @@ class BuildServer:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Veltrix Build Server")
-    parser.add_argument("--url", default=os.environ.get("HC_PANEL_URL", DEFAULT_URL),
-                        help="Panel URL (default: %(default)s)")
-    parser.add_argument("--key", default=os.environ.get("HC_BUILDER_KEY", DEFAULT_KEY),
-                        help="Builder secret key (default: from env or built-in)")
+    parser.add_argument("--url", default=DEFAULT_URL,
+                        help="Panel URL (default: %(default)s or $VELTRIX_PANEL_URL)")
+    parser.add_argument("--key", default=DEFAULT_KEY,
+                        help="Builder secret key (default: $VELTRIX_BUILDER_KEY)")
     parser.add_argument("--interval", type=int, default=POLL_INTERVAL,
                         help="Poll interval in seconds (default: %(default)s)")
     args = parser.parse_args()
