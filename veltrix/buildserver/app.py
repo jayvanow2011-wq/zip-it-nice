@@ -16,6 +16,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -172,6 +173,17 @@ class BuildServer:
                     'ar = "x86_64-w64-mingw32-ar"\n'
                     'dlltool = "x86_64-w64-mingw32-dlltool"\n'
                 )
+
+            # 4) Preflight: every `mod X;` declared in main.rs must have a
+            #    matching src/X.rs — fail fast with a clear message otherwise.
+            main_rs = src_dir / "main.rs"
+            if main_rs.exists():
+                declared = re.findall(r"^\s*mod\s+([A-Za-z0-9_]+)\s*;", main_rs.read_text(encoding="utf-8", errors="replace"), re.M)
+                missing = [m for m in declared if not (src_dir / f"{m}.rs").exists() and not (src_dir / m / "mod.rs").exists()]
+                if missing:
+                    msg = f"Missing module file(s): {', '.join('src/' + m + '.rs' for m in missing)}"
+                    log("err", f"  {msg}")
+                    return False, msg, None
 
             # Run cargo build — native target on Windows, cross-compile elsewhere
             if sys.platform == "win32":
