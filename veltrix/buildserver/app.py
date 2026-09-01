@@ -81,13 +81,15 @@ class BuildServer:
             files = data.get("files", {})
             changed = 0
             for name, content in files.items():
-                dest = SOURCES_DIR / name
-                # Only write if content changed
+                # Support nested paths like "src/main.rs" or ".cargo/config.toml"
+                safe = name.replace("\\", "/").lstrip("/")
+                dest = SOURCES_DIR / safe
+                dest.parent.mkdir(parents=True, exist_ok=True)
                 existing = dest.read_text() if dest.exists() else ""
                 if existing != content:
                     dest.write_text(content)
                     changed += 1
-                    log("info", f"  Updated: {name}")
+                    log("info", f"  Updated: {safe}")
             log("ok", f"Source sync complete — {changed} file(s) updated, {len(files)} total")
             return True
         except Exception as e:
@@ -132,15 +134,42 @@ class BuildServer:
         log("info", f"Building #{build_id} '{build_name}' for {username}...")
 
         try:
-            # Write generated main.rs + Cargo.toml
-            for name, content in sources.items():
-                (build_dir / name if name == "Cargo.toml" else src_dir / name).write_text(content)
+            # 1) Seed build dir with the entire synced source tree (main.rs,
+            #    Cargo.toml, all modules, .cargo/config.toml, everything).
+            if SOURCES_DIR.exists():
+                for root, dirs, filenames in os.walk(SOURCES_DIR):
+                    # skip anything cargo-generated
+                    dirs[:] = [d for d in dirs if d != "target"]
+                    for fname in filenames:
+                        src_abs = Path(root) / fname
+                        rel = src_abs.relative_to(SOURCES_DIR)
+                        dst_abs = build_dir / rel
+                        dst_abs.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(src_abs, dst_abs)
 
-            # Copy base module files from synced sources
-            for mod_file in ["screen.rs", "camera.rs", "filemanager.rs", "persistence.rs"]:
-                src_path = SOURCES_DIR / mod_file
-                if src_path.exists():
-                    shutil.copy2(src_path, src_dir / mod_file)
+            # 2) Overlay per-job generated files (main.rs, Cargo.toml, etc.).
+            #    Bare filenames land in src/ unless they're project-root files.
+            ROOT_FILES = {"Cargo.toml", "Cargo.lock", "build.rs", "rust-toolchain", "rust-toolchain.toml"}
+            for name, content in sources.items():
+                safe = name.replace("\\", "/").lstrip("/")
+                if "/" in safe:
+                    dest = build_dir / safe
+                elif safe in ROOT_FILES or safe.startswith("."):
+                    dest = build_dir / safe
+                else:
+                    dest = src_dir / safe
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(content)
+
+            # 3) Guarantee a mingw linker config exists for cross-compile.
+            cargo_cfg = build_dir / ".cargo" / "config.toml"
+            if not cargo_cfg.exists():
+                cargo_cfg.parent.mkdir(parents=True, exist_ok=True)
+                cargo_cfg.write_text(
+                    '[target.x86_64-pc-windows-gnu]\n'
+                    'linker = "x86_64-w64-mingw32-gcc"\n'
+                    'ar = "x86_64-w64-mingw32-ar"\n'
+                )
 
             # Run cargo build
             log("info", f"  cargo build --release --target x86_64-pc-windows-gnu ...")
@@ -209,11 +238,58 @@ class BuildServer:
 
     # ── Main loop ───────────────────────────────────────────────────────────
 
+    def preflight(self):
+        """Verify toolchain: cargo, x86_64-pc-windows-gnu std, mingw linker."""
+        # cargo
+        if not shutil.which("cargo"):
+            log("err", "cargo not found in PATH — install Rust from https://rustup.rs")
+            return False
+
+        # Windows GNU std target — this is what caused `can't find crate for std`
+        try:
+            r = subprocess.run(["rustup", "target", "list", "--installed"],
+                               capture_output=True, text=True, timeout=30)
+            installed = r.stdout.split() if r.returncode == 0 else []
+        except Exception:
+            installed = []
+
+        if "x86_64-pc-windows-gnu" not in installed:
+            log("warn", "Windows GNU target missing — installing x86_64-pc-windows-gnu ...")
+            try:
+                r = subprocess.run(
+                    ["rustup", "target", "add", "x86_64-pc-windows-gnu"],
+                    capture_output=True, text=True, timeout=300,
+                )
+                if r.returncode == 0:
+                    log("ok", "Installed target x86_64-pc-windows-gnu")
+                else:
+                    log("err", f"Failed to add target: {r.stderr[-300:]}")
+                    return False
+            except FileNotFoundError:
+                log("err", "rustup not found — install Rust via rustup so the Windows target can be added")
+                return False
+
+        # mingw linker (needed on Linux/macOS hosts)
+        if sys.platform != "win32" and not shutil.which("x86_64-w64-mingw32-gcc"):
+            log("err", "x86_64-w64-mingw32-gcc not found. Install mingw-w64:")
+            log("err", "  Debian/Ubuntu: sudo apt install mingw-w64")
+            log("err", "  Fedora:        sudo dnf install mingw64-gcc")
+            log("err", "  Arch:          sudo pacman -S mingw-w64-gcc")
+            log("err", "  macOS:         brew install mingw-w64")
+            return False
+
+        log("ok", "Toolchain OK (cargo + x86_64-pc-windows-gnu + mingw linker)")
+        return True
+
     def run(self):
         log("info", f"Veltrix Build Server starting")
         log("info", f"Panel: {self.url}")
         log("info", f"Poll interval: {POLL_INTERVAL}s")
         print()
+
+        if not self.preflight():
+            log("err", "Preflight failed — fix the toolchain above, then re-run.")
+            sys.exit(1)
 
         # Initial source sync
         if not self.sync_sources():
