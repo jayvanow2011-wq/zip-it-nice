@@ -891,17 +891,38 @@ app.post("/api/build", requireAuth, requireCsrf, requireActiveSub, async (req, r
 // BUILD SERVER API — authenticated with BUILDER_KEY
 // ══════════════════════════════════════════════════════════════════════════
 
-// GET /api/builder/sources — send rustagent source files to the build server
+// GET /api/builder/sources — send ALL rustagent source files to the build server
 app.get("/api/builder/sources", requireBuilderKey, (req, res) => {
-  const agentSrc = path.join(__dirname, "rustagent", "src");
+  const agentRoot = path.join(__dirname, "rustagent");
   const files = {};
-  for (const name of ["screen.rs", "camera.rs", "filemanager.rs", "persistence.rs"]) {
-    const p = path.join(agentSrc, name);
-    if (fs.existsSync(p)) files[name] = fs.readFileSync(p, "utf8");
+
+  function walk(dir, rel = "") {
+    if (!fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const relPath = rel ? `${rel}/${entry.name}` : entry.name;
+      const abs = path.join(dir, entry.name);
+      // Skip build artifacts / vcs
+      if (entry.isDirectory()) {
+        if (["target", "node_modules", ".git"].includes(entry.name)) continue;
+        walk(abs, relPath);
+      } else if (entry.isFile()) {
+        // Only ship text-y source/config files
+        if (/\.(rs|toml|lock|cfg)$/i.test(entry.name) || entry.name === "Cargo.toml") {
+          try { files[relPath] = fs.readFileSync(abs, "utf8"); } catch {}
+        }
+      }
+    }
   }
-  // Also send Cargo.toml template
-  const cargoPath = path.join(__dirname, "rustagent", "Cargo.toml");
-  if (fs.existsSync(cargoPath)) files["Cargo.toml"] = fs.readFileSync(cargoPath, "utf8");
+  walk(agentRoot);
+
+  // Ensure a mingw linker config ships so cross-compile from Linux works
+  if (!files[".cargo/config.toml"]) {
+    files[".cargo/config.toml"] =
+      `[target.x86_64-pc-windows-gnu]\n` +
+      `linker = "x86_64-w64-mingw32-gcc"\n` +
+      `ar = "x86_64-w64-mingw32-ar"\n`;
+  }
+
   res.json({ ok: true, files });
 });
 
